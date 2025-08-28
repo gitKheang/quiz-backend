@@ -1,6 +1,5 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-// ⬇️ change these two lines
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
@@ -8,8 +7,17 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.use(helmet());
-  app.use(cookieParser()); // now works
-  app.enableCors({ origin: [/localhost:\d+$/], credentials: true });
+  app.use(cookieParser());
+
+  // ✅ Updated CORS config
+  app.enableCors({
+    origin: [
+      /localhost:\d+$/, // keep local dev working
+      'https://quiz-app-frontend-dun.vercel.app', // allow your deployed frontend
+    ],
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
