@@ -6,16 +6,27 @@ import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
   app.use(helmet());
   app.use(cookieParser());
 
-  // ✅ Updated CORS config
+  // Allow localhost, your prod domain, and (optional) Vercel previews
+  const allowlist: (string | RegExp)[] = [
+    /^https?:\/\/localhost(?::\d+)?$/,          // local dev
+    'https://quiz-app-frontend-dun.vercel.app', // production frontend
+    /^https:\/\/quiz-app-frontend-dun-.*\.vercel\.app$/, // previews (optional)
+  ];
+
   app.enableCors({
-    origin: [
-      /localhost:\d+$/, // keep local dev working
-      'https://quiz-app-frontend-dun.vercel.app', // allow your deployed frontend
-    ],
-    credentials: true,
+    origin(origin, cb) {
+      if (!origin) return cb(null, true); // Postman/cURL
+      const ok = allowlist.some(rule =>
+        rule instanceof RegExp ? rule.test(origin) : rule === origin,
+      );
+      cb(ok ? null : new Error(`CORS blocked: ${origin}`), ok);
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true, // keep true only if you actually need cookies/auth headers
   });
 
   app.setGlobalPrefix('api');
