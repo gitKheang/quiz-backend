@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  description  String?
+  color        String?
+  icon         String?
+  sortOrder    Int           @default(0)
+  isDefault    Boolean       @default(false)
+  timeLimitSec Int?
+
+  questions    Question[]
+  sessions     QuizSession[]  // keep back-relation so existing code continues to work
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Question {
+  id          String    @id @default(cuid())
+  categoryId  String
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  text        String
+  explanation String?
+  difficulty  Difficulty
+  type        String    @default("single") // "single" | "multi"
+  imageUrl    String?
+
+  options     Option[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([categoryId])
+}
+
+model Option {
+  id         String    @id @default(cuid())
+  questionId String
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean   @default(false)
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String?
+  provider     String     @default("local") // "local" | "google"
+  role         Role       @default(USER)
+
+  sessions     QuizSession[]
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model QuizSession {
+  id            String     @id @default(cuid())
+  attemptId     String     @unique
+  categoryId    String
+  category      Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  numQuestions  Int
+  difficulty    Difficulty?
+  timeLimitSec  Int?
+  questionIds   Json
+  savedAnswers  Json?
+  startAt       DateTime   @default(now())
+  endAt         DateTime?
+  isCompleted   Boolean    @default(false)
+  score         Int?       @default(0)
+  timeTakenSec  Int?       @default(0)
+
+  // NEW: optional link to a signed-in user
+  userId        String?
+  user          User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([categoryId])
+  @@index([userId])
+}
