@@ -9,6 +9,11 @@ import { Role } from '@prisma/client';
 type GoogleProfile = { email?: string; name?: string };
 type JwtShape = { sub: string; email: string; role?: string; name?: string };
 
+function isHttps(req: Request): boolean {
+  const xfProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
+  return req.secure === true || xfProto === 'https';
+}
+
 @Injectable()
 export class AuthService {
   constructor(private prisma: PrismaService) {}
@@ -21,22 +26,33 @@ export class AuthService {
     return jwt.sign(payload, this.jwtSecret, { expiresIn: '7d' });
   }
 
-  private setAuthCookie(res: Response, token: string) {
-    const isProd = process.env.NODE_ENV === 'production';
+  private setAuthCookie(req: Request, res: Response, token: string) {
+    const https = isHttps(req);
     res.cookie('access_token', token, {
       httpOnly: true,
-      // Cross-site cookie required when frontend (Vercel) calls backend (Render)
-      sameSite: isProd ? 'none' : 'lax',
-      secure: isProd,       // must be true when SameSite=None
+      sameSite: https ? ('none' as const) : ('lax' as const),
+      secure: https,
       path: '/',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      // domain: process.env.COOKIE_DOMAIN || undefined, // uncomment if you need a specific cookie domain
+    });
+  }
+
+  private clearAuthCookie(req: Request, res: Response) {
+    const https = isHttps(req);
+    res.clearCookie('access_token', {
+      httpOnly: true,
+      sameSite: https ? ('none' as const) : ('lax' as const),
+      secure: https,
+      path: '/',
+      // domain: process.env.COOKIE_DOMAIN || undefined,
     });
   }
 
   /* =========================
    *   Manual Sign Up
    * ========================= */
-  async signUp(dto: { name: string; email: string; password: string }, res: Response) {
+  async signUp(dto: { name: string; email: string; password: string }, req: Request, res: Response) {
     const email = dto.email.trim().toLowerCase();
     const name = dto.name.trim();
 
@@ -52,7 +68,7 @@ export class AuthService {
         select: { id: true, name: true, email: true, role: true },
       });
       const token = this.signJwt({ sub: user.id, email: user.email, name: user.name, role: user.role });
-      this.setAuthCookie(res, token);
+      this.setAuthCookie(req, res, token);
       return user;
     }
 
@@ -64,7 +80,7 @@ export class AuthService {
         select: { id: true, name: true, email: true, role: true },
       });
       const token = this.signJwt({ sub: updated.id, email: updated.email, name: updated.name, role: updated.role });
-      this.setAuthCookie(res, token);
+      this.setAuthCookie(req, res, token);
       return updated;
     }
 
@@ -74,7 +90,7 @@ export class AuthService {
   /* =========================
    *   Manual Sign In
    * ========================= */
-  async signIn(dto: { email: string; password: string }, res: Response) {
+  async signIn(dto: { email: string; password: string }, req: Request, res: Response) {
     const email = dto.email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -105,7 +121,7 @@ export class AuthService {
         name: updated.name,
         role: updated.role,
       });
-      this.setAuthCookie(res, token);
+      this.setAuthCookie(req, res, token);
       return updated;
     }
 
@@ -113,25 +129,25 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('invalid_credentials');
 
     const token = this.signJwt({ sub: user.id, email: user.email, name: user.name, role: user.role });
-    this.setAuthCookie(res, token);
+    this.setAuthCookie(req, res, token);
     return { id: user.id, email: user.email, name: user.name, role: user.role };
   }
 
-  signOut(res: Response) {
-    const isProd = process.env.NODE_ENV === 'production';
-    res.clearCookie('access_token', {
-      path: '/',
-      sameSite: isProd ? 'none' : 'lax',
-      secure: isProd,
-    });
+  signOut(req: Request, res: Response) {
+    this.clearAuthCookie(req, res);
     return { ok: true };
   }
 
   /* =========================
-   *   Me (from cookie)
+   *   Me (from cookie or Authorization)
    * ========================= */
   async me(req: Request) {
-    const token = (req as any).cookies?.access_token;
+    let token: string | undefined =
+      (req as any).cookies?.access_token ||
+      (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.slice('Bearer '.length).trim()
+        : undefined);
+
     if (!token) return null;
 
     try {
@@ -149,7 +165,7 @@ export class AuthService {
   /* =========================
    *   Google OAuth
    * ========================= */
-  async googleLogin(profile: GoogleProfile, res: Response): Promise<void> {
+  async googleLogin(profile: GoogleProfile, req: Request, res: Response): Promise<void> {
     if (!profile.email) throw new BadRequestException('google_no_email');
 
     const email = profile.email.toLowerCase();
@@ -163,6 +179,6 @@ export class AuthService {
     });
 
     const token = this.signJwt({ sub: user.id, email: user.email, name: user.name, role: user.role });
-    this.setAuthCookie(res, token);
+    this.setAuthCookie(req, res, token);
   }
 }

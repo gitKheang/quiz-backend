@@ -10,20 +10,20 @@ export class AuthController {
   constructor(private auth: AuthService) {}
 
   @Post('signup')
-  async signUp(@Body() dto: SignUpDto, @Res() res: Response) {
-    const user = await this.auth.signUp(dto, res);
+  async signUp(@Body() dto: SignUpDto, @Req() req: Request, @Res() res: Response) {
+    const user = await this.auth.signUp(dto, req, res);
     return res.json(user);
   }
 
   @Post('signin')
-  async signIn(@Body() dto: SignInDto, @Res() res: Response) {
-    const user = await this.auth.signIn(dto, res);
+  async signIn(@Body() dto: SignInDto, @Req() req: Request, @Res() res: Response) {
+    const user = await this.auth.signIn(dto, req, res);
     return res.json(user);
   }
 
   @Post('signout')
-  signOut(@Res() res: Response) {
-    return res.json(this.auth.signOut(res));
+  signOut(@Req() req: Request, @Res() res: Response) {
+    return res.json(this.auth.signOut(req, res));
   }
 
   @Get('me')
@@ -33,7 +33,7 @@ export class AuthController {
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  async google() {
+  google() {
     // handled by passport
   }
 
@@ -43,7 +43,7 @@ export class AuthController {
     const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:5173';
     try {
       const profile = req.user as { email?: string; name?: string };
-      await this.auth.googleLogin(profile, res);
+      await this.auth.googleLogin(profile, req, res);
       return res.redirect(FRONTEND_URL);
     } catch (err) {
       console.error('Google callback failed:', err);
