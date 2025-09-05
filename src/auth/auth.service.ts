@@ -25,8 +25,9 @@ export class AuthService {
     const isProd = process.env.NODE_ENV === 'production';
     res.cookie('access_token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: isProd, // set true in prod over https
+      // Cross-site cookie required when frontend (Vercel) calls backend (Render)
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,       // must be true when SameSite=None
       path: '/',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     });
@@ -35,11 +36,6 @@ export class AuthService {
   /* =========================
    *   Manual Sign Up
    * ========================= */
-  /**
-   * - New email: create local user with passwordHash.
-   * - Existing Google-only user (passwordHash is null): attach password.
-   * - Existing local user (has hash): email_taken.
-   */
   async signUp(dto: { name: string; email: string; password: string }, res: Response) {
     const email = dto.email.trim().toLowerCase();
     const name = dto.name.trim();
@@ -61,7 +57,6 @@ export class AuthService {
     }
 
     if (!existing.passwordHash) {
-      // Attach password to Google-first account
       const passwordHash = await bcrypt.hash(dto.password, 10);
       const updated = await this.prisma.user.update({
         where: { email },
@@ -79,11 +74,6 @@ export class AuthService {
   /* =========================
    *   Manual Sign In
    * ========================= */
-  /**
-   * - Normal local users: compare hash.
-   * - Google-only users (no hash yet): in dev, auto-attach password on first sign-in.
-   *   Toggle via ALLOW_AUTO_ATTACH_PASSWORD (default true when NODE_ENV !== production).
-   */
   async signIn(dto: { email: string; password: string }, res: Response) {
     const email = dto.email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
@@ -93,18 +83,15 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('invalid_credentials');
 
-    // If password not set (e.g., Google-first), optionally auto-attach on first manual sign-in.
     if (!user.passwordHash) {
       const allowAuto =
         (process.env.ALLOW_AUTO_ATTACH_PASSWORD ??
           (process.env.NODE_ENV !== 'production' ? 'true' : 'false')) === 'true';
 
       if (!allowAuto) {
-        // safer behavior in prod if flag is off
         throw new UnauthorizedException('password_not_set');
       }
 
-      // DEV-friendly: attach the provided password and continue.
       const passwordHash = await bcrypt.hash(dto.password, 10);
       const updated = await this.prisma.user.update({
         where: { email },
@@ -122,7 +109,6 @@ export class AuthService {
       return updated;
     }
 
-    // Normal local login
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('invalid_credentials');
 
@@ -132,7 +118,12 @@ export class AuthService {
   }
 
   signOut(res: Response) {
-    res.clearCookie('access_token', { path: '/' });
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie('access_token', {
+      path: '/',
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,
+    });
     return { ok: true };
   }
 

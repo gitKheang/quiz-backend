@@ -6,6 +6,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { HealthController } from './health.controller'; // <— add
 
 @Module({
   imports: [
@@ -17,5 +18,6 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     UsersModule,
   ],
+  controllers: [HealthController], // <— add
 })
 export class AppModule {}
